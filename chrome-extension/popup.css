@@ -256,6 +256,7 @@ body {
   background: var(--bg-surface);
   color: var(--text-primary);
   outline: none;
+  max-width: 150px;
 }
 
 .config-path {
@@ -265,4 +266,32 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.action-row {
+  display: flex;
+  gap: var(--sp-2);
+}
+
+.action-btn {
+  flex: 1;
+  padding: var(--sp-2) var(--sp-3);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--accent-light);
+  border: 1px solid var(--accent-muted);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.action-btn:hover {
+  background: var(--bg-surface);
+}
+
+.action-status {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  line-height: 1.4;
 }
