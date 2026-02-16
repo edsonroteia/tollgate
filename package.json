@@ -1,0 +1,12 @@
+{
+  "name": "tollgate",
+  "version": "1.0.0",
+  "description": "Site blocker Chrome extension with shared to-do list",
+  "type": "module",
+  "bin": {
+    "tollgate-setup": "./scripts/setup.mjs"
+  },
+  "scripts": {
+    "setup": "node scripts/setup.mjs"
+  }
+}

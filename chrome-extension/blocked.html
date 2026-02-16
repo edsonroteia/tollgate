@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tollgate</title>
+  <link rel="stylesheet" href="blocked.css" />
+</head>
+<body>
+  <main class="container">
+    <header class="header">
+      <h1 class="logo">Tollgate</h1>
+      <p class="subtitle">Complete your tasks to unlock</p>
+      <p class="blocked-site" id="blockedSite"></p>
+    </header>
+
+    <div class="progress-section">
+      <svg class="progress-ring" viewBox="0 0 72 72">
+        <circle class="progress-ring__track" cx="36" cy="36" r="30" />
+        <circle class="progress-ring__fill" id="progressFill" cx="36" cy="36" r="30" />
+      </svg>
+      <span class="progress-label" id="progressLabel">0/0</span>
+    </div>
+
+    <div class="tasks-container" id="tasksContainer">
+      <!-- Sections and tasks rendered by JS -->
+    </div>
+
+    <div class="add-task-row">
+      <input
+        type="text"
+        class="add-task-input"
+        id="addTaskInput"
+        placeholder="+ Add task..."
+      />
+    </div>
+
+    <div class="stats-bar">
+      <div class="stat-pill">
+        <span class="stat-label">Streak</span>
+        <span class="stat-value" id="streakCurrent">0 days</span>
+      </div>
+      <div class="stat-pill">
+        <span class="stat-label">Best</span>
+        <span class="stat-value" id="streakLongest">0 days</span>
+      </div>
+    </div>
+
+    <p class="time-log" id="timeLog"></p>
+
+    <button class="unlock-btn" id="unlockBtn" disabled>
+      Unlock <span id="unlockSiteName"></span>
+    </button>
+    <p class="unlock-hint" id="unlockHint">all tasks must be completed</p>
+
+    <div class="countdown-bar" id="countdownBar" hidden>
+      <span class="countdown-label">Unlocked — re-locks in</span>
+      <span class="countdown-timer" id="countdownTimer"></span>
+    </div>
+  </main>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="blocked.js"></script>
+</body>
+</html>

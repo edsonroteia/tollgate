@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Tollgate",
+  "version": "1.0.0",
+  "description": "Block distracting sites until you complete your tasks",
+  "permissions": [
+    "storage",
+    "declarativeNetRequest",
+    "alarms",
+    "tabs",
+    "nativeMessaging"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Tollgate"
+  },
+  "declarative_net_request": {},
+  "web_accessible_resources": [
+    {
+      "resources": ["blocked.html"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

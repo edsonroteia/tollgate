@@ -1,0 +1,251 @@
+/* ── Tokens (same as blocked.css) ─────────────────────────────────── */
+
+:root {
+  --font-mono: "SF Mono", "Cascadia Code", "Fira Code", "JetBrains Mono",
+    "Source Code Pro", ui-monospace, monospace;
+  --font-size-xs: 10px;
+  --font-size-sm: 12px;
+  --font-size-base: 13px;
+
+  --accent: #5b5fc7;
+  --accent-hover: #4b4fba;
+  --accent-light: #eef0ff;
+  --accent-muted: #8b8fd4;
+
+  --bg-primary: #f4f5f7;
+  --bg-surface: #ffffff;
+
+  --text-primary: #1e1e2e;
+  --text-secondary: #5c5f77;
+  --text-muted: #8c8fa3;
+  --text-inverse: #ffffff;
+
+  --border: #e2e4ea;
+  --border-light: #edeef2;
+
+  --error: #e5534b;
+
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-pill: 999px;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  width: 320px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Popup Layout ─────────────────────────────────────────────────── */
+
+.popup {
+  padding: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.popup-header {
+  text-align: center;
+}
+
+.popup-logo {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+
+/* ── Stats ─────────────────────────────────────────────────────────── */
+
+.popup-stats {
+  display: flex;
+  gap: var(--sp-2);
+}
+
+.mini-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--sp-2) var(--sp-1);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+}
+
+.mini-stat-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.mini-stat-label {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+/* ── Section ──────────────────────────────────────────────────────── */
+
+.popup-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.popup-section-title {
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+}
+
+/* ── Site Input ───────────────────────────────────────────────────── */
+
+.site-input-row {
+  display: flex;
+  gap: var(--sp-2);
+}
+
+.site-input {
+  flex: 1;
+  padding: var(--sp-2) var(--sp-3);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.site-input:focus {
+  border-color: var(--accent);
+}
+
+.site-add-btn {
+  padding: var(--sp-2) var(--sp-3);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: var(--text-inverse);
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+
+.site-add-btn:hover {
+  background: var(--accent-hover);
+}
+
+/* ── Site List ────────────────────────────────────────────────────── */
+
+.site-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.site-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-3);
+  background: var(--accent-light);
+  color: var(--accent);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  border-radius: var(--radius-pill);
+}
+
+.site-remove {
+  background: none;
+  border: none;
+  color: var(--accent-muted);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.site-remove:hover {
+  color: var(--error);
+}
+
+/* ── Unlock List ──────────────────────────────────────────────────── */
+
+.unlock-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.unlock-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+}
+
+.unlock-timer {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+/* ── Config ────────────────────────────────────────────────────────── */
+
+.config-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--sp-2) 0;
+}
+
+.config-label {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.config-select {
+  padding: var(--sp-1) var(--sp-2);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.config-path {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tollgate</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="popup">
+    <header class="popup-header">
+      <h1 class="popup-logo">Tollgate</h1>
+    </header>
+
+    <!-- Stats -->
+    <div class="popup-stats">
+      <div class="mini-stat">
+        <span class="mini-stat-value" id="streakValue">0</span>
+        <span class="mini-stat-label">day streak</span>
+      </div>
+      <div class="mini-stat">
+        <span class="mini-stat-value" id="tasksToday">0</span>
+        <span class="mini-stat-label">done today</span>
+      </div>
+      <div class="mini-stat">
+        <span class="mini-stat-value" id="cooldownStatus">--</span>
+        <span class="mini-stat-label">cooldown</span>
+      </div>
+    </div>
+
+    <!-- Blocked Sites -->
+    <section class="popup-section">
+      <h2 class="popup-section-title">Blocked Sites</h2>
+      <div class="site-input-row">
+        <input
+          type="text"
+          class="site-input"
+          id="siteInput"
+          placeholder="e.g. twitter.com"
+        />
+        <button class="site-add-btn" id="siteAddBtn">Add</button>
+      </div>
+      <div class="site-list" id="siteList"></div>
+    </section>
+
+    <!-- Active Unlocks -->
+    <section class="popup-section" id="unlocksSection" hidden>
+      <h2 class="popup-section-title">Active Unlocks</h2>
+      <div class="unlock-list" id="unlockList"></div>
+    </section>
+
+    <!-- Config -->
+    <section class="popup-section">
+      <h2 class="popup-section-title">Settings</h2>
+      <div class="config-row">
+        <label class="config-label" for="cooldownSelect">Cooldown</label>
+        <select class="config-select" id="cooldownSelect">
+          <option value="15">15 min</option>
+          <option value="30" selected>30 min</option>
+          <option value="60">60 min</option>
+        </select>
+      </div>
+      <div class="config-row">
+        <label class="config-label">Markdown file</label>
+        <span class="config-path" id="mdPath">not configured</span>
+      </div>
+    </section>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
