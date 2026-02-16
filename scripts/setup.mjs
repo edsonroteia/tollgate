@@ -31,13 +31,11 @@ const CHROME_NMH_DIR = join(
   "NativeMessagingHosts"
 );
 
+const rl = createInterface({ input: process.stdin, output: process.stdout });
+
 function ask(question) {
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => {
-      rl.close();
-      resolve(answer.trim());
-    });
+  return new Promise((res) => {
+    rl.question(question, (answer) => res(answer.trim()));
   });
 }
 
@@ -46,15 +44,21 @@ async function main() {
 
   // 1. Get markdown file path
   let mdPath = await ask("  Path to your markdown task file: ");
-  mdPath = resolve(mdPath.replace(/^~/, homedir()));
+  mdPath = mdPath.replace(/^['"]|['"]$/g, ""); // strip surrounding quotes
+  mdPath = mdPath.replace(/\\ /g, " ");        // unescape spaces
+  mdPath = mdPath.replace(/^~/, homedir());
+  mdPath = resolve(mdPath);
+  console.log("  Resolved path:", mdPath);
 
   if (!existsSync(mdPath)) {
-    const create = await ask(`  File doesn't exist. Create it? (y/n) `);
+    const create = await ask("  File doesn't exist. Create it? (y/n) ");
     if (create.toLowerCase() === "y") {
+      mkdirSync(dirname(mdPath), { recursive: true });
       writeFileSync(mdPath, "## Tasks\n- [ ] Your first task\n", "utf8");
       console.log("  Created:", mdPath);
     } else {
       console.log("  Aborted.");
+      rl.close();
       process.exit(1);
     }
   }
@@ -68,20 +72,37 @@ async function main() {
   );
   console.log("  Config written:", join(CONFIG_DIR, "config.json"));
 
-  // 3. Copy host scripts
+  // 3. Copy host scripts and generate wrapper with correct node path
   mkdirSync(HOST_DIR, { recursive: true });
   copyFileSync(
     join(__dirname, "native-host.mjs"),
     join(HOST_DIR, "native-host.mjs")
   );
-  copyFileSync(
-    join(__dirname, "native-host-wrapper.sh"),
-    join(HOST_DIR, "native-host-wrapper.sh")
-  );
+
+  // Write wrapper with the node path from this process so Chrome can find it
+  const nodePath = dirname(process.execPath);
+  const wrapper = `#!/bin/bash
+# Wrapper script for Tollgate native messaging host.
+# Chrome doesn't load shell profiles, so we set PATH explicitly.
+export PATH="${nodePath}:/opt/homebrew/bin:/usr/local/bin:$PATH"
+DIR="$(cd "$(dirname "$0")" && pwd)"
+exec node "$DIR/native-host.mjs"
+`;
+  writeFileSync(join(HOST_DIR, "native-host-wrapper.sh"), wrapper, "utf8");
   chmodSync(join(HOST_DIR, "native-host-wrapper.sh"), 0o755);
   console.log("  Host scripts installed:", HOST_DIR);
 
-  // 4. Install Chrome native messaging host manifest
+  // 4. Get extension ID for native messaging
+  console.log("\n  Find your extension ID at chrome://extensions (with Developer mode on)");
+  const extId = await ask("  Chrome extension ID: ");
+
+  if (!extId || extId.length < 10) {
+    console.log("  Invalid extension ID. Aborted.");
+    rl.close();
+    process.exit(1);
+  }
+
+  // 5. Install Chrome native messaging host manifest
   mkdirSync(CHROME_NMH_DIR, { recursive: true });
 
   const manifest = {
@@ -90,9 +111,7 @@ async function main() {
     path: join(HOST_DIR, "native-host-wrapper.sh"),
     type: "stdio",
     allowed_origins: [
-      // The extension ID will be known after loading unpacked.
-      // Use a wildcard-compatible pattern; user may need to update this.
-      `chrome-extension://*/`,
+      `chrome-extension://${extId}/`,
     ],
   };
 
@@ -100,13 +119,8 @@ async function main() {
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n", "utf8");
   console.log("  NMH manifest installed:", manifestPath);
 
-  console.log(
-    "\n  Note: After loading the extension, update the allowed_origins"
-  );
-  console.log("  in the NMH manifest with your extension ID:");
-  console.log(`  chrome-extension://<YOUR_EXTENSION_ID>/\n`);
-
-  console.log("  Setup complete!\n");
+  console.log("\n  Setup complete! Restart Chrome to activate native messaging.\n");
+  rl.close();
 }
 
 main();

@@ -18,10 +18,12 @@ chrome.runtime.onInstalled.addListener(async () => {
     });
   }
   await syncBlockingRules();
+  connectNativeHost();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   await syncBlockingRules();
+  connectNativeHost();
 });
 
 // ── Blocking rules ──────────────────────────────────────────────────
@@ -63,7 +65,7 @@ async function syncBlockingRules() {
         },
       },
       condition: {
-        urlFilter: "||" + site,
+        requestDomains: [site],
         resourceTypes: ["main_frame"],
       },
     });
@@ -139,6 +141,24 @@ async function relockSite(site) {
 
   await chrome.storage.local.set({ unlocks, timeLog });
   await syncBlockingRules();
+
+  // Redirect any open tabs on this site to the block page
+  const blockedUrl = chrome.runtime.getURL(
+    "/blocked.html?site=" + encodeURIComponent(site)
+  );
+  const tabs = await chrome.tabs.query({});
+  for (const tab of tabs) {
+    if (tab.url) {
+      try {
+        const url = new URL(tab.url);
+        if (url.hostname === site || url.hostname.endsWith("." + site)) {
+          chrome.tabs.update(tab.id, { url: blockedUrl });
+        }
+      } catch {
+        // ignore invalid URLs
+      }
+    }
+  }
 }
 
 // ── Alarms ──────────────────────────────────────────────────────────
@@ -197,6 +217,10 @@ function connectNativeHost() {
     nativePort.onMessage.addListener(async (msg) => {
       if (msg.type === "tasks") {
         await chrome.storage.local.set({ tasks: msg.tasks });
+      } else if (msg.type === "config") {
+        const { config } = await chrome.storage.local.get("config");
+        Object.assign(config, msg.config);
+        await chrome.storage.local.set({ config });
       }
     });
 
@@ -231,6 +255,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 async function handleMessage(msg) {
   switch (msg.type) {
     case "getState": {
+      if (!nativePort) connectNativeHost();
       const state = await chrome.storage.local.get(null);
       return state;
     }
@@ -261,6 +286,12 @@ async function handleMessage(msg) {
     case "unlock": {
       const unlock = await unlockSite(msg.site);
       return { ok: true, unlock };
+    }
+
+    case "relock": {
+      await chrome.alarms.clear(`relock-${msg.site}`);
+      await relockSite(msg.site);
+      return { ok: true };
     }
 
     case "updateConfig": {

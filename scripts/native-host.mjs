@@ -27,12 +27,83 @@ function loadConfig() {
 
 // ── Markdown parser (mirrors chrome-extension/markdown.js) ──────────
 
+const DEFAULT_SECTION = "Tasks";
+const INDENT_WIDTH = 2;
+
+function getIndentLevel(indent) {
+  const expanded = indent.replace(/\t/g, " ".repeat(INDENT_WIDTH));
+  return Math.floor(expanded.length / INDENT_WIDTH);
+}
+
+function normalizeParentLevel(level, parentStack) {
+  let normalized = level;
+  while (normalized > 0 && !parentStack[normalized - 1]) {
+    normalized -= 1;
+  }
+  return normalized;
+}
+
+function formatTaskLine(task, depth) {
+  const check = task.completed ? "x" : " ";
+  const indent = " ".repeat(depth * INDENT_WIDTH);
+  let line = `${indent}- [${check}] ${task.text}`;
+
+  if (task.dueDate) line += ` (due: ${task.dueDate})`;
+  if (task.recurring) line += ` (${task.recurring})`;
+
+  return line;
+}
+
+function orderTasksForSerialization(tasks) {
+  const tasksById = new Map(tasks.map((task) => [task.id, task]));
+  const childrenByParent = new Map();
+
+  for (const task of tasks) {
+    const parentId =
+      task.parentId && task.parentId !== task.id && tasksById.has(task.parentId)
+        ? task.parentId
+        : null;
+    if (!childrenByParent.has(parentId)) childrenByParent.set(parentId, []);
+    childrenByParent.get(parentId).push(task);
+  }
+
+  const ordered = [];
+  const visiting = new Set();
+  const visited = new Set();
+
+  const walk = (task, depth) => {
+    if (visited.has(task.id) || visiting.has(task.id)) return;
+    visiting.add(task.id);
+    ordered.push({ task, depth });
+    visited.add(task.id);
+
+    for (const child of childrenByParent.get(task.id) || []) {
+      walk(child, depth + 1);
+    }
+
+    visiting.delete(task.id);
+  };
+
+  for (const root of childrenByParent.get(null) || []) {
+    walk(root, 0);
+  }
+
+  for (const task of tasks) {
+    if (!visited.has(task.id)) {
+      walk(task, 0);
+    }
+  }
+
+  return ordered;
+}
+
 function parse(markdown) {
   if (!markdown || !markdown.trim()) return { sections: [] };
 
   const lines = markdown.split("\n");
   const sections = [];
   let currentSection = null;
+  const parentStack = [];
 
   for (const line of lines) {
     const trimmed = line.trim();
@@ -41,18 +112,20 @@ function parse(markdown) {
     if (headingMatch) {
       currentSection = { name: headingMatch[1].trim(), tasks: [] };
       sections.push(currentSection);
+      parentStack.length = 0;
       continue;
     }
 
-    const taskMatch = trimmed.match(/^-\s+\[([ xX])\]\s+(.+)$/);
+    const taskMatch = line.match(/^(\s*)-\s+\[([ xX])\]\s+(.+)$/);
     if (taskMatch) {
       if (!currentSection) {
-        currentSection = { name: "Tasks", tasks: [] };
+        currentSection = { name: DEFAULT_SECTION, tasks: [] };
         sections.push(currentSection);
+        parentStack.length = 0;
       }
 
-      const completed = taskMatch[1].toLowerCase() === "x";
-      let text = taskMatch[2].trim();
+      const completed = taskMatch[2].toLowerCase() === "x";
+      let text = taskMatch[3].trim();
       let dueDate = null;
       let recurring = null;
 
@@ -68,14 +141,24 @@ function parse(markdown) {
         text = text.replace(recurringMatch[0], "").trim();
       }
 
+      const level = normalizeParentLevel(
+        getIndentLevel(taskMatch[1]),
+        parentStack
+      );
+      const id = crypto.randomUUID();
+      const parentId = level > 0 ? parentStack[level - 1] : null;
+
       currentSection.tasks.push({
-        id: crypto.randomUUID(),
+        id,
         text,
         completed,
+        parentId,
         dueDate,
         recurring,
         completedAt: completed ? new Date().toISOString() : null,
       });
+      parentStack[level] = id;
+      parentStack.length = level + 1;
     }
   }
 
@@ -86,12 +169,8 @@ function serialize(sections) {
   const parts = [];
   for (const section of sections) {
     parts.push(`## ${section.name}`);
-    for (const task of section.tasks) {
-      const check = task.completed ? "x" : " ";
-      let line = `- [${check}] ${task.text}`;
-      if (task.dueDate) line += ` (due: ${task.dueDate})`;
-      if (task.recurring) line += ` (${task.recurring})`;
-      parts.push(line);
+    for (const { task, depth } of orderTasksForSerialization(section.tasks || [])) {
+      parts.push(formatTaskLine(task, depth));
     }
     parts.push("");
   }
@@ -111,7 +190,7 @@ function flattenTasks(parsed) {
 function groupBySections(tasks) {
   const map = new Map();
   for (const task of tasks) {
-    const name = task.section || "Tasks";
+    const name = task.section || DEFAULT_SECTION;
     if (!map.has(name)) map.set(name, []);
     map.get(name).push(task);
   }
@@ -208,6 +287,9 @@ function writeTasksToFile(mdPath, tasks) {
 async function main() {
   const config = loadConfig();
   const mdPath = config.markdownPath;
+
+  // Send config to extension so it can display the markdown path
+  sendMessage({ type: "config", config: { markdownPath: mdPath } });
 
   if (mdPath && existsSync(mdPath)) {
     // Send initial tasks to extension

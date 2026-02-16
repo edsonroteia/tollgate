@@ -18,7 +18,6 @@
     "default_popup": "popup.html",
     "default_title": "Tollgate"
   },
-  "declarative_net_request": {},
   "web_accessible_resources": [
     {
       "resources": ["blocked.html"],

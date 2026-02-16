@@ -133,8 +133,18 @@ function renderUnlocks() {
     const intervalId = setInterval(updateTimer, 1000);
     unlockIntervals.push(intervalId);
 
+    const relockBtn = document.createElement("button");
+    relockBtn.className = "relock-btn";
+    relockBtn.textContent = "Reblock";
+    relockBtn.addEventListener("click", async () => {
+      await chrome.runtime.sendMessage({ type: "relock", site });
+      delete state.unlocks[site];
+      render();
+    });
+
     item.appendChild(name);
     item.appendChild(timer);
+    item.appendChild(relockBtn);
     list.appendChild(item);
   }
 }

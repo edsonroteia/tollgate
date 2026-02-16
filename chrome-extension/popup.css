@@ -216,6 +216,23 @@ body {
   color: var(--accent);
 }
 
+.relock-btn {
+  padding: var(--sp-1) var(--sp-2);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  color: var(--error);
+  background: none;
+  border: 1px solid var(--error);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+
+.relock-btn:hover {
+  background: var(--error);
+  color: var(--text-inverse);
+}
+
 /* ── Config ────────────────────────────────────────────────────────── */
 
 .config-row {

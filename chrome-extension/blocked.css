@@ -190,6 +190,10 @@ body {
 
 /* ── Task Item ────────────────────────────────────────────────────── */
 
+.task-node + .task-node {
+  border-top: 1px solid var(--border-light);
+}
+
 .task-item {
   display: flex;
   align-items: flex-start;
@@ -197,8 +201,54 @@ body {
   padding: var(--sp-2) 0;
 }
 
-.task-item + .task-item {
-  border-top: 1px solid var(--border-light);
+.task-node--nested > .task-item {
+  padding: 6px 0;
+}
+
+.task-children {
+  margin-left: 28px;
+  padding-left: var(--sp-2);
+  border-left: 1px dashed var(--border);
+}
+
+.task-controls {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  flex-shrink: 0;
+}
+
+.task-collapse-toggle,
+.task-collapse-spacer {
+  width: 14px;
+  min-width: 14px;
+  height: 18px;
+}
+
+.task-collapse-toggle {
+  margin-top: 1px;
+  border: none;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: center;
+  padding: 0;
+}
+
+.task-collapse-toggle:hover {
+  color: var(--accent);
+}
+
+.task-collapse-toggle:focus-visible {
+  outline: 1px solid var(--accent-muted);
+  border-radius: var(--radius-sm);
+}
+
+.task-collapse-spacer {
+  display: inline-block;
 }
 
 /* Custom checkbox */
@@ -242,7 +292,15 @@ body {
   min-width: 0;
 }
 
+.task-content-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+
 .task-text {
+  flex: 1;
   font-size: var(--font-size-base);
   color: var(--text-primary);
   word-break: break-word;
@@ -257,6 +315,7 @@ body {
   display: flex;
   gap: var(--sp-2);
   margin-top: var(--sp-1);
+  flex-wrap: wrap;
 }
 
 .task-badge {
@@ -278,6 +337,49 @@ body {
 
 .task-badge--recurring {
   background: #e8f5e9;
+  color: var(--success);
+}
+
+.task-subprogress {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin-left: var(--sp-2);
+  flex-shrink: 0;
+}
+
+.task-subprogress-ring {
+  width: 20px;
+  height: 20px;
+  transform: rotate(-90deg);
+}
+
+.task-subprogress-track {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 2;
+}
+
+.task-subprogress-fill {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.2s ease;
+}
+
+.task-subprogress-label {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  min-width: 24px;
+  text-align: right;
+}
+
+.task-subprogress.complete .task-subprogress-fill {
+  stroke: var(--success);
+}
+
+.task-subprogress.complete .task-subprogress-label {
   color: var(--success);
 }
 
