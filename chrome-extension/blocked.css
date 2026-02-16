@@ -99,10 +99,18 @@ body {
 }
 
 .logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-size: var(--font-size-2xl);
   font-weight: 700;
   letter-spacing: -0.5px;
   color: var(--text-primary);
+}
+
+.logo-icon {
+  width: 28px;
+  height: 28px;
 }
 
 .subtitle {

@@ -111,7 +111,14 @@ function isUnlockRequirementMet(tasks, config) {
 
 // ── Blocking rules ──────────────────────────────────────────────────
 
-async function syncBlockingRules() {
+let _syncQueue = Promise.resolve();
+
+function syncBlockingRules() {
+  _syncQueue = _syncQueue.then(_syncBlockingRulesImpl, _syncBlockingRulesImpl);
+  return _syncQueue;
+}
+
+async function _syncBlockingRulesImpl() {
   const { blockedSites = [], unlocks = {} } = await chrome.storage.local.get([
     "blockedSites",
     "unlocks",
