@@ -130,6 +130,21 @@ body {
   font-weight: 600;
 }
 
+.abstinence-timer {
+  text-align: center;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--success);
+  margin-top: var(--sp-1);
+}
+
+.cost-label {
+  display: block;
+  text-align: center;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
 /* ── Progress Ring ────────────────────────────────────────────────── */
 
 .progress-section {

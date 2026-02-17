@@ -303,3 +303,215 @@ body {
   color: var(--text-muted);
   line-height: 1.4;
 }
+
+/* ── Site Badges ──────────────────────────────────────────────────── */
+
+.site-badge {
+  font-size: 9px;
+  padding: 0 4px;
+  border-radius: var(--radius-pill);
+  font-weight: 700;
+  margin-left: 2px;
+}
+
+.site-badge--group {
+  background: #e8f0fe;
+  color: #3b68b4;
+}
+
+.site-badge--cost {
+  background: #fef3e2;
+  color: #b4802c;
+}
+
+.site-abstinence {
+  font-size: 9px;
+  color: #2d9d78;
+  font-weight: 600;
+  margin-left: 2px;
+}
+
+/* ── Groups ───────────────────────────────────────────────────────── */
+
+.group-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.group-empty {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.group-card {
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+}
+
+.group-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+
+.group-name {
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.group-cost-badge {
+  font-size: 9px;
+  padding: 0 4px;
+  border-radius: var(--radius-pill);
+  font-weight: 700;
+  background: #fef3e2;
+  color: #b4802c;
+}
+
+.group-header-actions {
+  display: flex;
+  gap: var(--sp-1);
+}
+
+.group-edit-btn,
+.group-delete-btn {
+  border: 1px solid transparent;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  padding: 1px 4px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+}
+
+.group-edit-btn:hover {
+  color: var(--accent);
+  background: var(--accent-light);
+}
+
+.group-delete-btn:hover {
+  color: var(--error);
+  background: #fde8e8;
+}
+
+.group-sites {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  margin-top: var(--sp-1);
+}
+
+.group-site-pill {
+  font-size: var(--font-size-xs);
+  padding: 1px 6px;
+  background: var(--accent-light);
+  color: var(--accent);
+  border-radius: var(--radius-pill);
+  font-weight: 600;
+}
+
+.group-abstinence {
+  display: block;
+  font-size: var(--font-size-xs);
+  color: #2d9d78;
+  font-weight: 600;
+  margin-top: var(--sp-1);
+}
+
+.group-add-btn {
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--accent-light);
+  border: 1px dashed var(--accent-muted);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.group-add-btn:hover {
+  background: var(--bg-surface);
+}
+
+/* ── Group Editor ─────────────────────────────────────────────────── */
+
+.group-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.group-editor[hidden] {
+  display: none;
+}
+
+.group-name-input {
+  padding: var(--sp-2) var(--sp-3);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.group-name-input:focus {
+  border-color: var(--accent);
+}
+
+.group-site-checkboxes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.group-site-checkbox-label {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.group-cost-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.group-cost-input {
+  width: 60px;
+  padding: var(--sp-1) var(--sp-2);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.group-cost-input:focus {
+  border-color: var(--accent);
+}
+
+.group-editor-actions {
+  display: flex;
+  gap: var(--sp-2);
+}

@@ -43,6 +43,36 @@
       <div class="site-list" id="siteList"></div>
     </section>
 
+    <!-- Site Groups -->
+    <section class="popup-section" id="groupsSection">
+      <h2 class="popup-section-title">Site Groups</h2>
+      <div class="group-list" id="groupList"></div>
+      <div class="group-editor" id="groupEditor" hidden>
+        <input
+          type="text"
+          class="group-name-input"
+          id="groupNameInput"
+          placeholder="Group name"
+        />
+        <div class="group-site-checkboxes" id="groupSiteCheckboxes"></div>
+        <div class="group-cost-row">
+          <label class="config-label" for="groupCostInput">Unlock cost</label>
+          <input
+            type="number"
+            class="group-cost-input"
+            id="groupCostInput"
+            placeholder="all"
+            min="0"
+          />
+        </div>
+        <div class="group-editor-actions">
+          <button class="action-btn" id="groupSaveBtn">Save</button>
+          <button class="action-btn" id="groupCancelBtn">Cancel</button>
+        </div>
+      </div>
+      <button class="group-add-btn" id="groupAddBtn">+ New Group</button>
+    </section>
+
     <!-- Active Unlocks -->
     <section class="popup-section" id="unlocksSection" hidden>
       <h2 class="popup-section-title">Active Unlocks</h2>

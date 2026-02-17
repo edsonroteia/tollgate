@@ -10,8 +10,9 @@
   <main class="container">
     <header class="header">
       <h1 class="logo"><img src="icons/icon-128.png" alt="" class="logo-icon" />Tollgate</h1>
-      <p class="subtitle">Complete your tasks to unlock</p>
+      <p class="subtitle" id="subtitle">Complete your tasks to unlock</p>
       <p class="blocked-site" id="blockedSite"></p>
+      <p class="abstinence-timer" id="abstinenceTimer" hidden></p>
     </header>
 
     <div class="progress-section">
@@ -20,6 +21,7 @@
         <circle class="progress-ring__fill" id="progressFill" cx="36" cy="36" r="30" />
       </svg>
       <span class="progress-label" id="progressLabel">0/0</span>
+      <span class="cost-label" id="costLabel" hidden></span>
     </div>
 
     <div class="tasks-container" id="tasksContainer">

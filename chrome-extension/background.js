@@ -58,6 +58,9 @@ async function ensureLocalDefaults() {
     updates.streak = { ...DEFAULT_STREAK, ...currentStreak };
   }
 
+  if (!Array.isArray(data.siteGroups)) updates.siteGroups = [];
+  if (!data.siteSettings || typeof data.siteSettings !== "object") updates.siteSettings = {};
+
   if (!Array.isArray(data[LOCAL_BACKUPS_KEY])) {
     updates[LOCAL_BACKUPS_KEY] = [];
   }
@@ -109,6 +112,39 @@ function isUnlockRequirementMet(tasks, config) {
   }
 
   return list.length > 0 && list.every((task) => task.completed);
+}
+
+// ── Group & Cost helpers ────────────────────────────────────────────
+
+function resolveGroupForSite(site, siteGroups) {
+  if (!Array.isArray(siteGroups)) return null;
+  return siteGroups.find((g) => g.sites.includes(site)) || null;
+}
+
+function getEffectiveCost(site, siteGroups, siteSettings) {
+  const group = resolveGroupForSite(site, siteGroups);
+  if (group && group.cost >= 1) return group.cost;
+  const settings = siteSettings && siteSettings[site];
+  if (settings && settings.cost >= 1) return settings.cost;
+  return null;
+}
+
+function isCostRequirementMet(tasks, config, cost, baseline) {
+  if (cost === null || cost === undefined || cost <= 0) {
+    return isUnlockRequirementMet(tasks, config);
+  }
+  const list = Array.isArray(tasks) ? tasks : [];
+  const done = list.filter((t) => t.completed).length;
+  const effective = done - (baseline || 0);
+  return effective >= cost;
+}
+
+function getCostBaseline(site, siteGroups, siteSettings) {
+  const group = resolveGroupForSite(site, siteGroups);
+  if (group && typeof group.costBaseline === "number") return group.costBaseline;
+  const settings = siteSettings && siteSettings[site];
+  if (settings && typeof settings.costBaseline === "number") return settings.costBaseline;
+  return 0;
 }
 
 // ── Blocking rules ──────────────────────────────────────────────────
@@ -175,47 +211,67 @@ async function unlockSite(site) {
     unlocks = {},
     timeLog = [],
     tasks = [],
+    siteGroups = [],
+    siteSettings = {},
   } = await chrome.storage.local.get([
     "blockedSites",
     "config",
     "unlocks",
     "timeLog",
     "tasks",
+    "siteGroups",
+    "siteSettings",
   ]);
 
-  if (!isUnlockRequirementMet(tasks, config)) {
+  const cost = getEffectiveCost(site, siteGroups, siteSettings);
+  const baseline = getCostBaseline(site, siteGroups, siteSettings);
+  if (!isCostRequirementMet(tasks, config, cost, baseline)) {
     return null;
   }
 
   const cooldown = (normalizeConfig(config).cooldownMinutes || 30);
   const now = new Date();
+  const expiresAt = new Date(now.getTime() + cooldown * 60000).toISOString();
 
-  unlocks[site] = {
-    unlockedAt: now.toISOString(),
-    expiresAt: new Date(now.getTime() + cooldown * 60000).toISOString(),
-  };
+  const group = resolveGroupForSite(site, siteGroups);
+  const sitesToUnlock = group ? group.sites : [site];
+  const removeRuleIds = [];
 
-  timeLog.push({
-    site,
-    unlockedAt: now.toISOString(),
-    lockedAt: null,
-  });
-
-  await chrome.storage.local.set({ unlocks, timeLog });
-
-  // Remove the blocking rule for this site
-  const idx = blockedSites.indexOf(site);
-  if (idx !== -1) {
-    const ruleId = RULE_ID_BASE + idx;
-    await chrome.declarativeNetRequest.updateDynamicRules({
-      removeRuleIds: [ruleId],
-    });
+  for (const s of sitesToUnlock) {
+    unlocks[s] = { unlockedAt: now.toISOString(), expiresAt };
+    const idx = blockedSites.indexOf(s);
+    if (idx !== -1) removeRuleIds.push(RULE_ID_BASE + idx);
   }
 
-  // Set alarm to re-lock
-  chrome.alarms.create(`relock-${site}`, { delayInMinutes: cooldown });
+  // Only log the site the user actually visited, not all group members
+  timeLog.push({ site, unlockedAt: now.toISOString(), lockedAt: null });
 
-  // Update streak
+  if (group) {
+    unlocks[`group:${group.id}`] = { unlockedAt: now.toISOString(), expiresAt };
+  }
+
+  // Save cost baseline so next cycle requires N *more* completed tasks
+  if (cost !== null && cost >= 1) {
+    const completedNow = (Array.isArray(tasks) ? tasks : []).filter((t) => t.completed).length;
+    if (group) {
+      group.costBaseline = completedNow;
+      // siteGroups is already a reference to the fetched array
+    } else {
+      if (!siteSettings[site]) siteSettings[site] = {};
+      siteSettings[site].costBaseline = completedNow;
+    }
+  }
+
+  await chrome.storage.local.set({ unlocks, timeLog, siteGroups, siteSettings });
+
+  if (removeRuleIds.length > 0) {
+    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds });
+  }
+
+  // Set alarm — one per group or per site
+  const alarmName = group ? `relock-group:${group.id}` : `relock-${site}`;
+  chrome.alarms.create(alarmName, { delayInMinutes: cooldown });
+
   await updateStreak();
 
   return unlocks[site];
@@ -227,16 +283,23 @@ async function pauseSite(site, durationMinutes, justification) {
   }
 
   const duration = [5, 15, 30].includes(durationMinutes) ? durationMinutes : 5;
-  const { blockedSites = [], unlocks = {}, timeLog = [] } =
-    await chrome.storage.local.get(["blockedSites", "unlocks", "timeLog"]);
+  const { blockedSites = [], unlocks = {}, timeLog = [], siteGroups = [] } =
+    await chrome.storage.local.get(["blockedSites", "unlocks", "timeLog", "siteGroups"]);
 
   const now = new Date();
+  const expiresAt = new Date(now.getTime() + duration * 60000).toISOString();
 
-  unlocks[site] = {
-    unlockedAt: now.toISOString(),
-    expiresAt: new Date(now.getTime() + duration * 60000).toISOString(),
-  };
+  const group = resolveGroupForSite(site, siteGroups);
+  const sitesToPause = group ? group.sites : [site];
+  const removeRuleIds = [];
 
+  for (const s of sitesToPause) {
+    unlocks[s] = { unlockedAt: now.toISOString(), expiresAt };
+    const idx = blockedSites.indexOf(s);
+    if (idx !== -1) removeRuleIds.push(RULE_ID_BASE + idx);
+  }
+
+  // Only log the site the user actually visited
   timeLog.push({
     site,
     unlockedAt: now.toISOString(),
@@ -245,55 +308,77 @@ async function pauseSite(site, durationMinutes, justification) {
     justification: justification.trim(),
   });
 
-  await chrome.storage.local.set({ unlocks, timeLog });
-
-  const idx = blockedSites.indexOf(site);
-  if (idx !== -1) {
-    const ruleId = RULE_ID_BASE + idx;
-    await chrome.declarativeNetRequest.updateDynamicRules({
-      removeRuleIds: [ruleId],
-    });
+  if (group) {
+    unlocks[`group:${group.id}`] = { unlockedAt: now.toISOString(), expiresAt };
   }
 
-  chrome.alarms.create(`relock-${site}`, { delayInMinutes: duration });
+  await chrome.storage.local.set({ unlocks, timeLog });
+
+  if (removeRuleIds.length > 0) {
+    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds });
+  }
+
+  const alarmName = group ? `relock-group:${group.id}` : `relock-${site}`;
+  chrome.alarms.create(alarmName, { delayInMinutes: duration });
 
   return unlocks[site];
 }
 
 async function relockSite(site) {
-  const { unlocks = {}, timeLog = [] } = await chrome.storage.local.get([
-    "unlocks",
-    "timeLog",
-  ]);
+  const { unlocks = {}, timeLog = [], siteGroups = [], siteSettings = {} } =
+    await chrome.storage.local.get(["unlocks", "timeLog", "siteGroups", "siteSettings"]);
 
-  delete unlocks[site];
+  const now = new Date().toISOString();
+  let sitesToRelock;
 
-  // Close the time log entry
-  const openEntry = timeLog
-    .slice()
-    .reverse()
-    .find((entry) => entry.site === site && !entry.lockedAt);
-  if (openEntry) {
-    openEntry.lockedAt = new Date().toISOString();
+  if (site.startsWith("group:")) {
+    const groupId = site.slice("group:".length);
+    const group = siteGroups.find((g) => g.id === groupId);
+    sitesToRelock = group ? group.sites : [];
+    delete unlocks[site];
+    if (group) group.lastLockedAt = now;
+  } else {
+    const group = resolveGroupForSite(site, siteGroups);
+    if (group) {
+      sitesToRelock = group.sites;
+      delete unlocks[`group:${group.id}`];
+      group.lastLockedAt = now;
+    } else {
+      sitesToRelock = [site];
+    }
   }
 
-  await chrome.storage.local.set({ unlocks, timeLog });
+  for (const s of sitesToRelock) {
+    delete unlocks[s];
+    const openEntry = timeLog
+      .slice()
+      .reverse()
+      .find((entry) => entry.site === s && !entry.lockedAt);
+    if (openEntry) openEntry.lockedAt = now;
+
+    if (!siteSettings[s]) siteSettings[s] = {};
+    siteSettings[s].lastLockedAt = now;
+  }
+
+  await chrome.storage.local.set({ unlocks, timeLog, siteGroups, siteSettings });
   await syncBlockingRules();
 
-  // Redirect any open tabs on this site to the block page
-  const blockedUrl = chrome.runtime.getURL(
-    "/blocked.html?site=" + encodeURIComponent(site)
-  );
+  // Redirect open tabs for all relocked sites
   const tabs = await chrome.tabs.query({});
-  for (const tab of tabs) {
-    if (tab.url) {
-      try {
-        const url = new URL(tab.url);
-        if (url.hostname === site || url.hostname.endsWith("." + site)) {
-          chrome.tabs.update(tab.id, { url: blockedUrl });
+  for (const s of sitesToRelock) {
+    const blockedUrl = chrome.runtime.getURL(
+      "/blocked.html?site=" + encodeURIComponent(s)
+    );
+    for (const tab of tabs) {
+      if (tab.url) {
+        try {
+          const url = new URL(tab.url);
+          if (url.hostname === s || url.hostname.endsWith("." + s)) {
+            chrome.tabs.update(tab.id, { url: blockedUrl });
+          }
+        } catch {
+          // ignore invalid URLs
         }
-      } catch {
-        // ignore invalid URLs
       }
     }
   }
@@ -311,14 +396,27 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 async function recreateRelockAlarms() {
   const { unlocks = {} } = await chrome.storage.local.get("unlocks");
   const now = Date.now();
+  const handled = new Set();
 
-  for (const [site, unlock] of Object.entries(unlocks)) {
+  // Process group: keys and standalone domain keys
+  for (const [key, unlock] of Object.entries(unlocks)) {
+    // For per-site keys that belong to a group, the group: key alarm covers them
+    if (!key.startsWith("group:") && handled.has(key)) continue;
+
     const expiresAt = new Date(unlock.expiresAt).getTime();
     if (expiresAt > now) {
       const remaining = Math.max((expiresAt - now) / 60000, 0.5);
-      chrome.alarms.create(`relock-${site}`, { delayInMinutes: remaining });
+      chrome.alarms.create(`relock-${key}`, { delayInMinutes: remaining });
+      if (key.startsWith("group:")) {
+        // Mark per-site keys so we skip creating duplicate alarms
+        for (const [k, u] of Object.entries(unlocks)) {
+          if (!k.startsWith("group:") && u.expiresAt === unlock.expiresAt) {
+            handled.add(k);
+          }
+        }
+      }
     } else {
-      await relockSite(site);
+      await relockSite(key);
     }
   }
 }
@@ -401,10 +499,12 @@ async function buildLocalBackupSnapshot() {
     "streak",
     "timeLog",
     "unlocks",
+    "siteGroups",
+    "siteSettings",
   ]);
 
   return {
-    version: 1,
+    version: 2,
     createdAt: new Date().toISOString(),
     blockedSites: Array.isArray(state.blockedSites) ? state.blockedSites : [],
     tasks: Array.isArray(state.tasks) ? state.tasks : [],
@@ -412,6 +512,8 @@ async function buildLocalBackupSnapshot() {
     streak: state.streak || { ...DEFAULT_STREAK },
     timeLog: Array.isArray(state.timeLog) ? state.timeLog : [],
     unlocks: state.unlocks && typeof state.unlocks === "object" ? state.unlocks : {},
+    siteGroups: Array.isArray(state.siteGroups) ? state.siteGroups : [],
+    siteSettings: state.siteSettings && typeof state.siteSettings === "object" ? state.siteSettings : {},
   };
 }
 
@@ -421,12 +523,14 @@ async function buildSyncSnapshot() {
     "tasks",
     "config",
     "streak",
+    "siteGroups",
+    "siteSettings",
   ]);
 
   const cfg = normalizeConfig(state.config || {});
 
   return {
-    version: 1,
+    version: 2,
     createdAt: new Date().toISOString(),
     blockedSites: Array.isArray(state.blockedSites) ? state.blockedSites : [],
     tasks: Array.isArray(state.tasks) ? state.tasks : [],
@@ -436,6 +540,8 @@ async function buildSyncSnapshot() {
       unlockSection: cfg.unlockSection,
     },
     streak: state.streak || { ...DEFAULT_STREAK },
+    siteGroups: Array.isArray(state.siteGroups) ? state.siteGroups : [],
+    siteSettings: state.siteSettings && typeof state.siteSettings === "object" ? state.siteSettings : {},
   };
 }
 
@@ -556,6 +662,8 @@ async function applySnapshot(snapshot, options = {}) {
     streak: snapshot.streak || { ...DEFAULT_STREAK },
     timeLog: Array.isArray(snapshot.timeLog) ? snapshot.timeLog : [],
     unlocks: snapshot.unlocks && typeof snapshot.unlocks === "object" ? snapshot.unlocks : {},
+    siteGroups: Array.isArray(snapshot.siteGroups) ? snapshot.siteGroups : [],
+    siteSettings: snapshot.siteSettings && typeof snapshot.siteSettings === "object" ? snapshot.siteSettings : {},
   };
 
   await chrome.storage.local.set(nextState);
@@ -629,7 +737,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     syncBlockingRules();
   }
 
-  if (changes.blockedSites || changes.tasks || changes.config || changes.streak) {
+  if (changes.blockedSites || changes.tasks || changes.config || changes.streak || changes.siteGroups || changes.siteSettings) {
     syncNow().catch(() => {
       // Ignore sync write errors during background auto-sync.
     });
@@ -697,22 +805,33 @@ async function handleMessage(msg) {
     }
 
     case "addSite": {
-      const { blockedSites = [] } = await chrome.storage.local.get("blockedSites");
+      const { blockedSites = [], siteSettings = {} } = await chrome.storage.local.get([
+        "blockedSites",
+        "siteSettings",
+      ]);
       const site = msg.site
         .replace(/^https?:\/\//, "")
         .replace(/\/.*$/, "")
         .toLowerCase();
       if (!blockedSites.includes(site)) {
         blockedSites.push(site);
-        await chrome.storage.local.set({ blockedSites });
+        if (!siteSettings[site]) siteSettings[site] = {};
+        siteSettings[site].lastLockedAt = new Date().toISOString();
+        await chrome.storage.local.set({ blockedSites, siteSettings });
       }
       return { ok: true, blockedSites };
     }
 
     case "removeSite": {
-      const data = await chrome.storage.local.get("blockedSites");
+      const data = await chrome.storage.local.get(["blockedSites", "siteGroups", "siteSettings"]);
       const sites = (data.blockedSites || []).filter((site) => site !== msg.site);
-      await chrome.storage.local.set({ blockedSites: sites });
+      const groups = (data.siteGroups || []).map((g) => ({
+        ...g,
+        sites: g.sites.filter((s) => s !== msg.site),
+      })).filter((g) => g.sites.length > 0);
+      const settings = data.siteSettings || {};
+      delete settings[msg.site];
+      await chrome.storage.local.set({ blockedSites: sites, siteGroups: groups, siteSettings: settings });
       return { ok: true, blockedSites: sites };
     }
 
@@ -733,6 +852,11 @@ async function handleMessage(msg) {
     }
 
     case "relock": {
+      const { siteGroups: rGroups = [] } = await chrome.storage.local.get("siteGroups");
+      const rGroup = resolveGroupForSite(msg.site, rGroups);
+      if (rGroup) {
+        await chrome.alarms.clear(`relock-group:${rGroup.id}`);
+      }
       await chrome.alarms.clear(`relock-${msg.site}`);
       await relockSite(msg.site);
       return { ok: true };
@@ -787,6 +911,83 @@ async function handleMessage(msg) {
       } catch (error) {
         return { ok: false, error: error.message || "Restore from sync failed" };
       }
+    }
+
+    case "addGroup": {
+      const { siteGroups = [], blockedSites = [] } = await chrome.storage.local.get([
+        "siteGroups",
+        "blockedSites",
+      ]);
+      const groupSites = (msg.sites || []).filter((s) => typeof s === "string");
+      // Validate no site is already in another group
+      for (const s of groupSites) {
+        const existing = resolveGroupForSite(s, siteGroups);
+        if (existing) {
+          return { ok: false, error: `${s} is already in group "${existing.name}"` };
+        }
+      }
+      const now = new Date().toISOString();
+      const newGroup = {
+        id: crypto.randomUUID(),
+        name: (msg.name || "Untitled Group").trim(),
+        sites: groupSites,
+        cost: msg.cost >= 1 ? Math.round(msg.cost) : null,
+        lastLockedAt: now,
+      };
+      siteGroups.push(newGroup);
+      // Ensure member sites are in blockedSites
+      let sitesChanged = false;
+      for (const s of groupSites) {
+        if (!blockedSites.includes(s)) {
+          blockedSites.push(s);
+          sitesChanged = true;
+        }
+      }
+      const groupUpdate = { siteGroups };
+      if (sitesChanged) groupUpdate.blockedSites = blockedSites;
+      await chrome.storage.local.set(groupUpdate);
+      return { ok: true, group: newGroup };
+    }
+
+    case "updateGroup": {
+      const { siteGroups: uGroups = [] } = await chrome.storage.local.get("siteGroups");
+      const group = uGroups.find((g) => g.id === msg.id);
+      if (!group) return { ok: false, error: "Group not found" };
+      const newSites = msg.sites || group.sites;
+      // Validate no site in multiple groups
+      for (const s of newSites) {
+        const existing = resolveGroupForSite(s, uGroups);
+        if (existing && existing.id !== msg.id) {
+          return { ok: false, error: `${s} is already in group "${existing.name}"` };
+        }
+      }
+      if (msg.name !== undefined) group.name = (msg.name || "").trim();
+      if (msg.sites !== undefined) group.sites = newSites;
+      if (msg.cost !== undefined) group.cost = msg.cost >= 1 ? Math.round(msg.cost) : null;
+      await chrome.storage.local.set({ siteGroups: uGroups });
+      return { ok: true, group };
+    }
+
+    case "removeGroup": {
+      const { siteGroups: dGroups = [], unlocks: dUnlocks = {} } =
+        await chrome.storage.local.get(["siteGroups", "unlocks"]);
+      const idx = dGroups.findIndex((g) => g.id === msg.id);
+      if (idx === -1) return { ok: false, error: "Group not found" };
+      delete dUnlocks[`group:${msg.id}`];
+      dGroups.splice(idx, 1);
+      await chrome.storage.local.set({ siteGroups: dGroups, unlocks: dUnlocks });
+      await chrome.alarms.clear(`relock-group:${msg.id}`);
+      return { ok: true };
+    }
+
+    case "updateSiteSettings": {
+      const { siteSettings: uSettings = {} } = await chrome.storage.local.get("siteSettings");
+      if (!uSettings[msg.site]) uSettings[msg.site] = {};
+      if (msg.cost !== undefined) {
+        uSettings[msg.site].cost = msg.cost >= 1 ? Math.round(msg.cost) : null;
+      }
+      await chrome.storage.local.set({ siteSettings: uSettings });
+      return { ok: true, siteSettings: uSettings };
     }
 
     default:

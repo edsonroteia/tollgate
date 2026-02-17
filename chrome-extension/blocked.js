@@ -13,10 +13,15 @@ let state = {
   streak: { current: 0, longest: 0, lastDate: null },
   timeLog: [],
   unlocks: {},
+  siteGroups: [],
+  siteSettings: {},
 };
 
 const site = new URLSearchParams(location.search).get("site") || "";
 let countdownInterval = null;
+let abstinenceInterval = null;
+let currentGroup = null;
+let effectiveCost = null;
 const collapsedCompositeTasks = new Set();
 let editingTaskId = null;
 let pendingEditorFocusTaskId = null;
@@ -27,6 +32,48 @@ const dragState = {
   dropPosition: null,
 };
 
+// ── Group & Cost helpers ────────────────────────────────────────────
+
+function resolveGroupForSiteBlocked(s, siteGroups) {
+  if (!Array.isArray(siteGroups)) return null;
+  return siteGroups.find((g) => g.sites.includes(s)) || null;
+}
+
+function getEffectiveCostBlocked(s, siteGroups, siteSettings) {
+  const group = resolveGroupForSiteBlocked(s, siteGroups);
+  if (group && group.cost >= 1) return group.cost;
+  const settings = siteSettings && siteSettings[s];
+  if (settings && settings.cost >= 1) return settings.cost;
+  return null;
+}
+
+function formatDuration(ms) {
+  if (ms <= 0) return "0m";
+  const totalMinutes = Math.floor(ms / 60000);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
+function getLastLockedAt() {
+  const group = currentGroup;
+  if (group && group.lastLockedAt) return group.lastLockedAt;
+  const settings = (state.siteSettings || {})[site];
+  if (settings && settings.lastLockedAt) return settings.lastLockedAt;
+  return null;
+}
+
+function getCostBaselineBlocked() {
+  if (currentGroup && typeof currentGroup.costBaseline === "number") return currentGroup.costBaseline;
+  const settings = (state.siteSettings || {})[site];
+  if (settings && typeof settings.costBaseline === "number") return settings.costBaseline;
+  return 0;
+}
+
 // ── Init ────────────────────────────────────────────────────────────
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -34,6 +81,17 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("unlockSiteName").textContent = site;
 
   state = await sendMessage({ type: "getState" });
+
+  // Resolve group & cost for this site
+  currentGroup = resolveGroupForSiteBlocked(site, state.siteGroups || []);
+  effectiveCost = getEffectiveCostBlocked(site, state.siteGroups || [], state.siteSettings || {});
+
+  if (currentGroup) {
+    document.getElementById("subtitle").textContent =
+      `Complete tasks to unlock ${currentGroup.name}`;
+    document.getElementById("unlockSiteName").textContent = currentGroup.name;
+  }
+
   resetRecurringTasks();
   render();
   startCountdownIfNeeded();
@@ -120,6 +178,7 @@ function render() {
   renderTimeLog();
   renderPauseHistory();
   updateUnlockButton();
+  renderAbstinenceTimer();
 }
 
 function renderTasks() {
@@ -787,6 +846,23 @@ function clearTaskDropIndicators() {
 function getUnlockRequirement() {
   const tasks = state.tasks || [];
   const config = state.config || {};
+
+  // Cost mode: if effectiveCost is set, count completions since last unlock
+  if (effectiveCost !== null && effectiveCost >= 1) {
+    const baseline = getCostBaselineBlocked();
+    const rawDone = tasks.filter((task) => task.completed).length;
+    const done = Math.max(0, rawDone - baseline);
+    return {
+      mode: "cost",
+      cost: effectiveCost,
+      done,
+      total: tasks.length,
+      ready: done >= effectiveCost,
+      empty: tasks.length === 0,
+      section: "",
+    };
+  }
+
   const mode = config.unlockMode === "section" ? "section" : "all";
 
   if (mode === "section") {
@@ -823,17 +899,27 @@ function getUnlockRequirement() {
 
 function renderProgress() {
   const requirement = getUnlockRequirement();
-  const done = requirement.done;
-  const total = requirement.total;
-
-  document.getElementById("progressLabel").textContent = `${done}/${total}`;
-
   const circumference = 2 * Math.PI * 30; // r=30
-  const ratio = total > 0 ? done / total : 0;
-  const offset = circumference * (1 - ratio);
-  document.getElementById("progressFill").style.strokeDashoffset = offset;
+  const costLabel = document.getElementById("costLabel");
 
-  // Change ring color when requirement is completed
+  if (requirement.mode === "cost") {
+    const done = Math.min(requirement.done, requirement.cost);
+    document.getElementById("progressLabel").textContent = `${done}/${requirement.cost}`;
+    const ratio = requirement.cost > 0 ? done / requirement.cost : 0;
+    const offset = circumference * (1 - ratio);
+    document.getElementById("progressFill").style.strokeDashoffset = offset;
+    costLabel.textContent = `${requirement.cost} tasks required`;
+    costLabel.hidden = false;
+  } else {
+    const done = requirement.done;
+    const total = requirement.total;
+    document.getElementById("progressLabel").textContent = `${done}/${total}`;
+    const ratio = total > 0 ? done / total : 0;
+    const offset = circumference * (1 - ratio);
+    document.getElementById("progressFill").style.strokeDashoffset = offset;
+    costLabel.hidden = true;
+  }
+
   if (requirement.ready) {
     document.getElementById("progressFill").style.stroke = "var(--success)";
   } else {
@@ -925,6 +1011,7 @@ function updateUnlockButton() {
   const btn = document.getElementById("unlockBtn");
   const hint = document.getElementById("unlockHint");
   const pauseSection = document.getElementById("pauseSection");
+  const unlockLabel = currentGroup ? currentGroup.name : site;
 
   // Check if currently unlocked
   const unlock = (state.unlocks || {})[site];
@@ -938,8 +1025,16 @@ function updateUnlockButton() {
 
   pauseSection.hidden = false;
 
-  btn.textContent = "Unlock " + site;
+  btn.textContent = "Unlock " + unlockLabel;
   btn.disabled = !requirement.ready;
+
+  if (requirement.mode === "cost") {
+    const remaining = requirement.cost - requirement.done;
+    hint.textContent = requirement.ready
+      ? ""
+      : `complete ${remaining} more task${remaining !== 1 ? "s" : ""}`;
+    return;
+  }
 
   if (requirement.mode === "section") {
     if (!requirement.section) {
@@ -982,6 +1077,43 @@ function startCountdownIfNeeded() {
     document.getElementById("countdownTimer").textContent =
       `${mins}:${String(secs).padStart(2, "0")}`;
   }, 1000);
+}
+
+// ── Abstinence Timer ────────────────────────────────────────────────
+
+function renderAbstinenceTimer() {
+  const el = document.getElementById("abstinenceTimer");
+
+  // Hide during unlock
+  const unlock = (state.unlocks || {})[site];
+  if (unlock && new Date(unlock.expiresAt) > new Date()) {
+    el.hidden = true;
+    if (abstinenceInterval) {
+      clearInterval(abstinenceInterval);
+      abstinenceInterval = null;
+    }
+    return;
+  }
+
+  const lastLocked = getLastLockedAt();
+  if (!lastLocked) {
+    el.hidden = true;
+    return;
+  }
+
+  const update = () => {
+    const ms = Date.now() - new Date(lastLocked).getTime();
+    if (ms <= 0) {
+      el.hidden = true;
+      return;
+    }
+    el.textContent = `Blocked for ${formatDuration(ms)}`;
+    el.hidden = false;
+  };
+
+  update();
+  if (abstinenceInterval) clearInterval(abstinenceInterval);
+  abstinenceInterval = setInterval(update, 60000);
 }
 
 // ── Actions ─────────────────────────────────────────────────────────

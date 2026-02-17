@@ -7,7 +7,9 @@ let backupStatus = {
   latestSyncAt: null,
 };
 let unlockIntervals = [];
+let abstinenceTimerInterval = null;
 let statusMessage = "";
+let editingGroupId = null;
 
 // ── Init ────────────────────────────────────────────────────────────
 
@@ -42,6 +44,17 @@ document.addEventListener("DOMContentLoaded", async () => {
     .addEventListener("change", (event) => {
       void updateConfig({ unlockSection: event.target.value });
     });
+
+  // Group actions
+  document.getElementById("groupAddBtn").addEventListener("click", () => {
+    openGroupEditor(null);
+  });
+  document.getElementById("groupSaveBtn").addEventListener("click", () => {
+    void saveGroup();
+  });
+  document.getElementById("groupCancelBtn").addEventListener("click", () => {
+    closeGroupEditor();
+  });
 
   // Backup / sync actions
   document.getElementById("backupNowBtn").addEventListener("click", () => {
@@ -95,6 +108,48 @@ function formatDateTime(value) {
 function setStatus(text) {
   statusMessage = text;
   renderBackupStatus();
+}
+
+function formatDuration(ms) {
+  if (ms <= 0) return "0m";
+  const totalMinutes = Math.floor(ms / 60000);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
+function resolveGroupForSite(site, siteGroups) {
+  if (!Array.isArray(siteGroups)) return null;
+  return siteGroups.find((g) => g.sites.includes(site)) || null;
+}
+
+function getEffectiveCostForSite(site) {
+  const siteGroups = state.siteGroups || [];
+  const siteSettings = state.siteSettings || {};
+  const group = resolveGroupForSite(site, siteGroups);
+  if (group && group.cost >= 1) return group.cost;
+  const settings = siteSettings[site];
+  if (settings && settings.cost >= 1) return settings.cost;
+  return null;
+}
+
+function getSiteLastLockedAt(site) {
+  const siteGroups = state.siteGroups || [];
+  const siteSettings = state.siteSettings || {};
+  const group = resolveGroupForSite(site, siteGroups);
+  if (group && group.lastLockedAt) return group.lastLockedAt;
+  const settings = siteSettings[site];
+  if (settings && settings.lastLockedAt) return settings.lastLockedAt;
+  return null;
+}
+
+function isSiteUnlocked(site) {
+  const unlock = (state.unlocks || {})[site];
+  return unlock && new Date(unlock.expiresAt).getTime() > Date.now();
 }
 
 async function refreshState() {
@@ -204,9 +259,11 @@ async function restoreSync() {
 function render() {
   renderStats();
   renderSites();
+  renderGroups();
   renderUnlocks();
   renderConfig();
   renderBackupStatus();
+  startAbstinenceTimers();
 }
 
 function renderStats() {
@@ -231,7 +288,40 @@ function renderSites() {
   for (const site of state.blockedSites || []) {
     const pill = document.createElement("span");
     pill.className = "site-pill";
-    pill.textContent = site;
+
+    const nameSpan = document.createElement("span");
+    nameSpan.textContent = site;
+    pill.appendChild(nameSpan);
+
+    // Group badge
+    const group = resolveGroupForSite(site, state.siteGroups || []);
+    if (group) {
+      const badge = document.createElement("span");
+      badge.className = "site-badge site-badge--group";
+      badge.textContent = group.name;
+      pill.appendChild(badge);
+    }
+
+    // Cost badge
+    const cost = getEffectiveCostForSite(site);
+    if (cost !== null) {
+      const badge = document.createElement("span");
+      badge.className = "site-badge site-badge--cost";
+      badge.textContent = cost + "t";
+      badge.title = `Unlock cost: ${cost} tasks`;
+      pill.appendChild(badge);
+    }
+
+    // Abstinence timer (when locked)
+    if (!isSiteUnlocked(site)) {
+      const lastLocked = getSiteLastLockedAt(site);
+      if (lastLocked) {
+        const timerSpan = document.createElement("span");
+        timerSpan.className = "site-abstinence";
+        timerSpan.dataset.since = lastLocked;
+        pill.appendChild(timerSpan);
+      }
+    }
 
     const removeBtn = document.createElement("button");
     removeBtn.className = "site-remove";
@@ -243,7 +333,9 @@ function renderSites() {
       });
       if (resp.ok) {
         state.blockedSites = resp.blockedSites;
-        renderSites();
+        // Also refresh siteGroups/siteSettings
+        await refreshState();
+        render();
       }
     });
 
@@ -274,12 +366,35 @@ function renderUnlocks() {
   section.hidden = false;
   list.innerHTML = "";
 
-  for (const [site, unlock] of active) {
+  // Collapse group unlocks: track which sites are covered by a group: key
+  const groupCoveredSites = new Set();
+  const siteGroups = state.siteGroups || [];
+
+  for (const [key] of active) {
+    if (key.startsWith("group:")) {
+      const groupId = key.slice("group:".length);
+      const group = siteGroups.find((g) => g.id === groupId);
+      if (group) {
+        for (const s of group.sites) groupCoveredSites.add(s);
+      }
+    }
+  }
+
+  for (const [key, unlock] of active) {
+    // Skip per-site keys that are covered by a group
+    if (!key.startsWith("group:") && groupCoveredSites.has(key)) continue;
+
     const item = document.createElement("div");
     item.className = "unlock-item";
 
     const name = document.createElement("span");
-    name.textContent = site;
+    if (key.startsWith("group:")) {
+      const groupId = key.slice("group:".length);
+      const group = siteGroups.find((g) => g.id === groupId);
+      name.textContent = group ? group.name : key;
+    } else {
+      name.textContent = key;
+    }
 
     const timer = document.createElement("span");
     timer.className = "unlock-timer";
@@ -303,15 +418,203 @@ function renderUnlocks() {
     relockBtn.className = "relock-btn";
     relockBtn.textContent = "Reblock";
     relockBtn.addEventListener("click", async () => {
-      await chrome.runtime.sendMessage({ type: "relock", site });
-      delete state.unlocks[site];
-      renderUnlocks();
+      if (key.startsWith("group:")) {
+        const groupId = key.slice("group:".length);
+        const group = siteGroups.find((g) => g.id === groupId);
+        if (group && group.sites.length > 0) {
+          await chrome.runtime.sendMessage({ type: "relock", site: group.sites[0] });
+        }
+      } else {
+        await chrome.runtime.sendMessage({ type: "relock", site: key });
+      }
+      await refreshState();
+      render();
     });
 
     item.appendChild(name);
     item.appendChild(timer);
     item.appendChild(relockBtn);
     list.appendChild(item);
+  }
+}
+
+function renderGroups() {
+  const list = document.getElementById("groupList");
+  list.innerHTML = "";
+  const groups = state.siteGroups || [];
+
+  if (groups.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "group-empty";
+    empty.textContent = "No groups yet";
+    list.appendChild(empty);
+    return;
+  }
+
+  for (const group of groups) {
+    const card = document.createElement("div");
+    card.className = "group-card";
+
+    const header = document.createElement("div");
+    header.className = "group-card-header";
+
+    const nameEl = document.createElement("span");
+    nameEl.className = "group-name";
+    nameEl.textContent = group.name;
+    header.appendChild(nameEl);
+
+    if (group.cost >= 1) {
+      const costBadge = document.createElement("span");
+      costBadge.className = "group-cost-badge";
+      costBadge.textContent = group.cost + "t";
+      costBadge.title = `Unlock cost: ${group.cost} tasks`;
+      header.appendChild(costBadge);
+    }
+
+    const headerActions = document.createElement("div");
+    headerActions.className = "group-header-actions";
+
+    const editBtn = document.createElement("button");
+    editBtn.className = "group-edit-btn";
+    editBtn.textContent = "Edit";
+    editBtn.addEventListener("click", () => openGroupEditor(group));
+    headerActions.appendChild(editBtn);
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.className = "group-delete-btn";
+    deleteBtn.textContent = "Del";
+    deleteBtn.addEventListener("click", () => void removeGroup(group.id));
+    headerActions.appendChild(deleteBtn);
+
+    header.appendChild(headerActions);
+    card.appendChild(header);
+
+    // Site pills
+    const sitesEl = document.createElement("div");
+    sitesEl.className = "group-sites";
+    for (const s of group.sites) {
+      const pill = document.createElement("span");
+      pill.className = "group-site-pill";
+      pill.textContent = s;
+      sitesEl.appendChild(pill);
+    }
+    card.appendChild(sitesEl);
+
+    // Abstinence timer for group
+    if (group.lastLockedAt) {
+      const allUnlocked = group.sites.every((s) => isSiteUnlocked(s));
+      if (!allUnlocked) {
+        const timerEl = document.createElement("span");
+        timerEl.className = "group-abstinence";
+        timerEl.dataset.since = group.lastLockedAt;
+        card.appendChild(timerEl);
+      }
+    }
+
+    list.appendChild(card);
+  }
+}
+
+function openGroupEditor(group) {
+  editingGroupId = group ? group.id : null;
+  const editor = document.getElementById("groupEditor");
+  const nameInput = document.getElementById("groupNameInput");
+  const costInput = document.getElementById("groupCostInput");
+  const checkboxes = document.getElementById("groupSiteCheckboxes");
+
+  nameInput.value = group ? group.name : "";
+  costInput.value = group && group.cost >= 1 ? group.cost : "";
+
+  // Build site checkboxes from blockedSites
+  checkboxes.innerHTML = "";
+  const groupSites = group ? new Set(group.sites) : new Set();
+
+  for (const site of state.blockedSites || []) {
+    // Skip sites that are in OTHER groups (unless editing this group)
+    const existingGroup = resolveGroupForSite(site, state.siteGroups || []);
+    if (existingGroup && existingGroup.id !== editingGroupId) continue;
+
+    const label = document.createElement("label");
+    label.className = "group-site-checkbox-label";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.value = site;
+    cb.checked = groupSites.has(site);
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(" " + site));
+    checkboxes.appendChild(label);
+  }
+
+  editor.hidden = false;
+  document.getElementById("groupAddBtn").hidden = true;
+}
+
+function closeGroupEditor() {
+  document.getElementById("groupEditor").hidden = true;
+  document.getElementById("groupAddBtn").hidden = false;
+  editingGroupId = null;
+}
+
+async function saveGroup() {
+  const name = document.getElementById("groupNameInput").value.trim();
+  if (!name) return;
+
+  const checkboxes = document.getElementById("groupSiteCheckboxes").querySelectorAll("input:checked");
+  const sites = Array.from(checkboxes).map((cb) => cb.value);
+
+  if (sites.length === 0) return;
+
+  const costVal = parseInt(document.getElementById("groupCostInput").value, 10);
+  const cost = costVal >= 1 ? costVal : null;
+
+  let resp;
+  if (editingGroupId) {
+    resp = await chrome.runtime.sendMessage({
+      type: "updateGroup",
+      id: editingGroupId,
+      name,
+      sites,
+      cost,
+    });
+  } else {
+    resp = await chrome.runtime.sendMessage({
+      type: "addGroup",
+      name,
+      sites,
+      cost,
+    });
+  }
+
+  if (resp.ok) {
+    closeGroupEditor();
+    await refreshState();
+    render();
+  } else {
+    setStatus(resp.error || "Failed to save group");
+  }
+}
+
+async function removeGroup(id) {
+  const resp = await chrome.runtime.sendMessage({ type: "removeGroup", id });
+  if (resp.ok) {
+    await refreshState();
+    render();
+  }
+}
+
+function startAbstinenceTimers() {
+  if (abstinenceTimerInterval) clearInterval(abstinenceTimerInterval);
+  updateAbstinenceTimers();
+  abstinenceTimerInterval = setInterval(updateAbstinenceTimers, 60000);
+}
+
+function updateAbstinenceTimers() {
+  const now = Date.now();
+  const els = document.querySelectorAll("[data-since]");
+  for (const el of els) {
+    const since = new Date(el.dataset.since).getTime();
+    const ms = now - since;
+    el.textContent = ms > 0 ? formatDuration(ms) : "";
   }
 }
 
