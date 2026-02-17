@@ -48,6 +48,31 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Unlock button
   document.getElementById("unlockBtn").addEventListener("click", handleUnlock);
+
+  // Pause section
+  document.getElementById("pauseToggle").addEventListener("click", () => {
+    const panel = document.getElementById("pausePanel");
+    panel.hidden = !panel.hidden;
+  });
+
+  const pauseJustification = document.getElementById("pauseJustification");
+  const pauseCharcount = document.getElementById("pauseCharcount");
+  const pauseBtn = document.getElementById("pauseBtn");
+  const pauseDuration = document.getElementById("pauseDuration");
+
+  pauseJustification.addEventListener("input", () => {
+    const len = pauseJustification.value.trim().length;
+    const met = len >= 120;
+    pauseCharcount.textContent = `${len}/120`;
+    pauseCharcount.classList.toggle("met", met);
+    pauseBtn.disabled = !met;
+  });
+
+  pauseDuration.addEventListener("change", () => {
+    pauseBtn.textContent = `Pause for ${pauseDuration.value} min`;
+  });
+
+  pauseBtn.addEventListener("click", handlePause);
 });
 
 // ── Recurring task reset ────────────────────────────────────────────
@@ -93,6 +118,7 @@ function render() {
   renderProgress();
   renderStats();
   renderTimeLog();
+  renderPauseHistory();
   updateUnlockButton();
 }
 
@@ -848,10 +874,57 @@ function renderTimeLog() {
   document.getElementById("timeLog").textContent = "Today: " + parts.join(", ");
 }
 
+function renderPauseHistory() {
+  const log = state.timeLog || [];
+  const pauses = log
+    .filter((entry) => entry.paused && entry.justification)
+    .reverse();
+
+  const container = document.getElementById("pauseHistory");
+  const list = document.getElementById("pauseHistoryList");
+
+  if (pauses.length === 0) {
+    container.hidden = true;
+    return;
+  }
+
+  container.hidden = false;
+  list.innerHTML = "";
+
+  for (const entry of pauses) {
+    const item = document.createElement("div");
+    item.className = "pause-history-item";
+
+    const meta = document.createElement("div");
+    meta.className = "pause-history-meta";
+
+    const date = new Date(entry.unlockedAt);
+    const dateStr = date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    });
+    const timeStr = date.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+
+    meta.textContent = `${dateStr} ${timeStr} — ${entry.site}`;
+
+    const text = document.createElement("p");
+    text.className = "pause-history-text";
+    text.textContent = entry.justification;
+
+    item.appendChild(meta);
+    item.appendChild(text);
+    list.appendChild(item);
+  }
+}
+
 function updateUnlockButton() {
   const requirement = getUnlockRequirement();
   const btn = document.getElementById("unlockBtn");
   const hint = document.getElementById("unlockHint");
+  const pauseSection = document.getElementById("pauseSection");
 
   // Check if currently unlocked
   const unlock = (state.unlocks || {})[site];
@@ -859,8 +932,11 @@ function updateUnlockButton() {
     btn.textContent = "Site is unlocked";
     btn.disabled = true;
     hint.textContent = "";
+    pauseSection.hidden = true;
     return;
   }
+
+  pauseSection.hidden = false;
 
   btn.textContent = "Unlock " + site;
   btn.disabled = !requirement.ready;
@@ -1106,6 +1182,31 @@ async function deleteTask(taskId) {
 
   syncCompositeCompletion(state.tasks || []);
   await persistTasks("Task deleted");
+}
+
+async function handlePause() {
+  const justification = document.getElementById("pauseJustification").value;
+  const duration = parseInt(document.getElementById("pauseDuration").value, 10);
+
+  const resp = await sendMessage({
+    type: "pause",
+    site,
+    duration,
+    justification,
+  });
+
+  if (!resp.ok) {
+    showToast(resp.error || "Pause failed");
+    return;
+  }
+
+  state.unlocks[site] = resp.unlock;
+  render();
+  startCountdownIfNeeded();
+
+  setTimeout(() => {
+    location.href = "https://" + site;
+  }, 500);
 }
 
 async function handleUnlock() {

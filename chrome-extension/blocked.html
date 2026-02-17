@@ -53,6 +53,32 @@
     </button>
     <p class="unlock-hint" id="unlockHint">all tasks must be completed</p>
 
+    <div class="pause-section" id="pauseSection">
+      <button class="pause-toggle" id="pauseToggle" type="button">Need a break?</button>
+      <div class="pause-panel" id="pausePanel" hidden>
+        <p class="pause-prompt">Explain why you need to pause blocking. Be honest with yourself.</p>
+        <textarea
+          class="pause-textarea"
+          id="pauseJustification"
+          rows="4"
+          placeholder="Why do you need access right now? (minimum 120 characters)"
+        ></textarea>
+        <div class="pause-meta">
+          <span class="pause-charcount" id="pauseCharcount">0/120</span>
+          <select class="pause-duration" id="pauseDuration">
+            <option value="5">5 min</option>
+            <option value="15">15 min</option>
+            <option value="30">30 min</option>
+          </select>
+        </div>
+        <button class="pause-btn" id="pauseBtn" disabled>Pause for 5 min</button>
+        <details class="pause-history" id="pauseHistory">
+          <summary class="pause-history-toggle">Past justifications</summary>
+          <div class="pause-history-list" id="pauseHistoryList"></div>
+        </details>
+      </div>
+    </div>
+
     <div class="countdown-bar" id="countdownBar" hidden>
       <span class="countdown-label">Unlocked — re-locks in</span>
       <span class="countdown-timer" id="countdownTimer"></span>

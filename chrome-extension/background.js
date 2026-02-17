@@ -24,12 +24,14 @@ const SYNC_CHUNK_SIZE = 7000;
 chrome.runtime.onInstalled.addListener(async () => {
   await ensureLocalDefaults();
   await syncBlockingRules();
+  await recreateRelockAlarms();
   connectNativeHost();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   await ensureLocalDefaults();
   await syncBlockingRules();
+  await recreateRelockAlarms();
   connectNativeHost();
 });
 
@@ -150,7 +152,7 @@ async function _syncBlockingRulesImpl() {
         },
       },
       condition: {
-        requestDomains: [site],
+        urlFilter: "||" + site + "^",
         resourceTypes: ["main_frame"],
       },
     });
@@ -162,7 +164,9 @@ async function _syncBlockingRulesImpl() {
   });
 }
 
-// ── Unlock / Re-lock ────────────────────────────────────────────────
+// ── Unlock / Re-lock / Pause ────────────────────────────────────────
+
+const PAUSE_MIN_JUSTIFICATION = 120;
 
 async function unlockSite(site) {
   const {
@@ -217,6 +221,45 @@ async function unlockSite(site) {
   return unlocks[site];
 }
 
+async function pauseSite(site, durationMinutes, justification) {
+  if (typeof justification !== "string" || justification.trim().length < PAUSE_MIN_JUSTIFICATION) {
+    return null;
+  }
+
+  const duration = [5, 15, 30].includes(durationMinutes) ? durationMinutes : 5;
+  const { blockedSites = [], unlocks = {}, timeLog = [] } =
+    await chrome.storage.local.get(["blockedSites", "unlocks", "timeLog"]);
+
+  const now = new Date();
+
+  unlocks[site] = {
+    unlockedAt: now.toISOString(),
+    expiresAt: new Date(now.getTime() + duration * 60000).toISOString(),
+  };
+
+  timeLog.push({
+    site,
+    unlockedAt: now.toISOString(),
+    lockedAt: null,
+    paused: true,
+    justification: justification.trim(),
+  });
+
+  await chrome.storage.local.set({ unlocks, timeLog });
+
+  const idx = blockedSites.indexOf(site);
+  if (idx !== -1) {
+    const ruleId = RULE_ID_BASE + idx;
+    await chrome.declarativeNetRequest.updateDynamicRules({
+      removeRuleIds: [ruleId],
+    });
+  }
+
+  chrome.alarms.create(`relock-${site}`, { delayInMinutes: duration });
+
+  return unlocks[site];
+}
+
 async function relockSite(site) {
   const { unlocks = {}, timeLog = [] } = await chrome.storage.local.get([
     "unlocks",
@@ -264,6 +307,59 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     await relockSite(site);
   }
 });
+
+async function recreateRelockAlarms() {
+  const { unlocks = {} } = await chrome.storage.local.get("unlocks");
+  const now = Date.now();
+
+  for (const [site, unlock] of Object.entries(unlocks)) {
+    const expiresAt = new Date(unlock.expiresAt).getTime();
+    if (expiresAt > now) {
+      const remaining = Math.max((expiresAt - now) / 60000, 0.5);
+      chrome.alarms.create(`relock-${site}`, { delayInMinutes: remaining });
+    } else {
+      await relockSite(site);
+    }
+  }
+}
+
+// ── Navigation fallback (catches service-worker-cached pages) ───────
+
+chrome.webNavigation.onBeforeNavigate.addListener((details) => {
+  if (details.frameId !== 0) return;
+  if (details.url.startsWith("chrome") || details.url.startsWith("about")) return;
+  void guardNavigation(details);
+});
+
+async function guardNavigation(details) {
+  let hostname;
+  try {
+    hostname = new URL(details.url).hostname;
+  } catch {
+    return;
+  }
+
+  const { blockedSites = [], unlocks = {} } = await chrome.storage.local.get([
+    "blockedSites",
+    "unlocks",
+  ]);
+
+  const now = Date.now();
+  const matchedSite = blockedSites.find(
+    (site) => hostname === site || hostname.endsWith("." + site)
+  );
+
+  if (!matchedSite) return;
+
+  const unlock = unlocks[matchedSite];
+  if (unlock && new Date(unlock.expiresAt).getTime() > now) return;
+
+  const blockedUrl = chrome.runtime.getURL(
+    "/blocked.html?site=" + encodeURIComponent(matchedSite)
+  );
+
+  chrome.tabs.update(details.tabId, { url: blockedUrl });
+}
 
 // ── Streak tracking ─────────────────────────────────────────────────
 
@@ -626,6 +722,14 @@ async function handleMessage(msg) {
         return { ok: false, error: "Unlock requirement not completed" };
       }
       return { ok: true, unlock };
+    }
+
+    case "pause": {
+      const pause = await pauseSite(msg.site, msg.duration, msg.justification);
+      if (!pause) {
+        return { ok: false, error: "Justification must be at least 120 characters" };
+      }
+      return { ok: true, unlock: pause };
     }
 
     case "relock": {
