@@ -99,8 +99,16 @@ function isSameConfig(a, b) {
   );
 }
 
+function getLeafTasks(tasks) {
+  const parentIds = new Set();
+  for (const t of tasks) {
+    if (t.parentId) parentIds.add(t.parentId);
+  }
+  return tasks.filter((t) => !parentIds.has(t.id));
+}
+
 function isUnlockRequirementMet(tasks, config) {
-  const list = Array.isArray(tasks) ? tasks : [];
+  const list = getLeafTasks(Array.isArray(tasks) ? tasks : []);
   const cfg = normalizeConfig(config || {});
 
   if (cfg.unlockMode === "section") {
@@ -133,7 +141,7 @@ function isCostRequirementMet(tasks, config, cost, baseline) {
   if (cost === null || cost === undefined || cost <= 0) {
     return isUnlockRequirementMet(tasks, config);
   }
-  const list = Array.isArray(tasks) ? tasks : [];
+  const list = getLeafTasks(Array.isArray(tasks) ? tasks : []);
   const done = list.filter((t) => t.completed).length;
   const effective = done - (baseline || 0);
   return effective >= cost;
@@ -252,7 +260,7 @@ async function unlockSite(site) {
 
   // Save cost baseline so next cycle requires N *more* completed tasks
   if (cost !== null && cost >= 1) {
-    const completedNow = (Array.isArray(tasks) ? tasks : []).filter((t) => t.completed).length;
+    const completedNow = getLeafTasks(Array.isArray(tasks) ? tasks : []).filter((t) => t.completed).length;
     if (group) {
       group.costBaseline = completedNow;
       // siteGroups is already a reference to the fetched array

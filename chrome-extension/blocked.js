@@ -118,6 +118,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   const pauseBtn = document.getElementById("pauseBtn");
   const pauseDuration = document.getElementById("pauseDuration");
 
+  pauseJustification.addEventListener("paste", (e) => {
+    e.preventDefault();
+  });
+
+  pauseJustification.addEventListener("drop", (e) => {
+    e.preventDefault();
+  });
+
   pauseJustification.addEventListener("input", () => {
     const len = pauseJustification.value.trim().length;
     const met = len >= 120;
@@ -843,22 +851,31 @@ function clearTaskDropIndicators() {
     });
 }
 
+function getLeafTasks(tasks) {
+  const parentIds = new Set();
+  for (const t of tasks) {
+    if (t.parentId) parentIds.add(t.parentId);
+  }
+  return tasks.filter((t) => !parentIds.has(t.id));
+}
+
 function getUnlockRequirement() {
   const tasks = state.tasks || [];
   const config = state.config || {};
+  const leafTasks = getLeafTasks(tasks);
 
   // Cost mode: if effectiveCost is set, count completions since last unlock
   if (effectiveCost !== null && effectiveCost >= 1) {
     const baseline = getCostBaselineBlocked();
-    const rawDone = tasks.filter((task) => task.completed).length;
+    const rawDone = leafTasks.filter((task) => task.completed).length;
     const done = Math.max(0, rawDone - baseline);
     return {
       mode: "cost",
       cost: effectiveCost,
       done,
-      total: tasks.length,
+      total: leafTasks.length,
       ready: done >= effectiveCost,
-      empty: tasks.length === 0,
+      empty: leafTasks.length === 0,
       section: "",
     };
   }
@@ -868,7 +885,7 @@ function getUnlockRequirement() {
   if (mode === "section") {
     const section = (config.unlockSection || "").trim();
     const scopedTasks = section
-      ? tasks.filter((task) => (task.section || "Tasks") === section)
+      ? leafTasks.filter((task) => (task.section || "Tasks") === section)
       : [];
     const done = scopedTasks.filter((task) => task.completed).length;
     const total = scopedTasks.length;
@@ -884,8 +901,8 @@ function getUnlockRequirement() {
     };
   }
 
-  const done = tasks.filter((task) => task.completed).length;
-  const total = tasks.length;
+  const done = leafTasks.filter((task) => task.completed).length;
+  const total = leafTasks.length;
 
   return {
     mode,

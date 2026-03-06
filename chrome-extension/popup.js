@@ -271,9 +271,13 @@ function renderStats() {
   document.getElementById("streakValue").textContent = streak.current;
 
   const tasks = state.tasks || [];
+  const parentIds = new Set();
+  for (const t of tasks) {
+    if (t.parentId) parentIds.add(t.parentId);
+  }
   const today = new Date().toISOString().slice(0, 10);
   const doneToday = tasks.filter(
-    (task) => task.completed && task.completedAt && task.completedAt.startsWith(today)
+    (task) => !parentIds.has(task.id) && task.completed && task.completedAt && task.completedAt.startsWith(today)
   ).length;
   document.getElementById("tasksToday").textContent = doneToday;
 
